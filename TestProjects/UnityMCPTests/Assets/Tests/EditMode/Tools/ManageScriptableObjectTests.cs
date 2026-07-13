@@ -214,6 +214,137 @@ namespace MCPForUnityTests.Editor.Tools
         }
 
         [Test]
+        public void Modify_AppendsTypedSerializeReferenceElements()
+        {
+            var create = new JObject
+            {
+                ["action"] = "create",
+                ["typeName"] = typeof(ManageScriptableObjectTestDefinition).FullName,
+                ["folderPath"] = _runRoot,
+                ["assetName"] = "SerializeReference_Append",
+                ["overwrite"] = true
+            };
+            var createRes = ToJObject(ManageScriptableObject.HandleCommand(create));
+            Assert.IsTrue(createRes.Value<bool>("success"), createRes.ToString());
+            _createdGuid = createRes["data"]?["guid"]?.ToString();
+            _createdAssetPath = createRes["data"]?["path"]?.ToString();
+
+            // Append two polymorphic [SerializeReference] elements by auto-grow (the exact
+            // "append a typed managed reference" case that previously fell back to set and failed).
+            var modify = new JObject
+            {
+                ["action"] = "modify",
+                ["target"] = new JObject { ["guid"] = _createdGuid },
+                ["patches"] = new JArray
+                {
+                    new JObject
+                    {
+                        ["propertyPath"] = "features.Array.data[0]",
+                        ["op"] = "set",
+                        ["value"] = new JObject
+                        {
+                            ["$type"] = typeof(ManageScriptableObjectDamageFeature).FullName,
+                            ["amount"] = 7
+                        }
+                    },
+                    new JObject
+                    {
+                        ["propertyPath"] = "features.Array.data[1]",
+                        ["op"] = "set",
+                        ["value"] = new JObject
+                        {
+                            ["$type"] = typeof(ManageScriptableObjectHealFeature).FullName,
+                            ["rate"] = 1.5f
+                        }
+                    }
+                }
+            };
+
+            var modRes = ToJObject(ManageScriptableObject.HandleCommand(modify));
+            Assert.IsTrue(modRes.Value<bool>("success"), modRes.ToString());
+            var results = modRes["data"]?["results"] as JArray;
+            Assert.IsNotNull(results, "Expected per-patch results.");
+            foreach (var r in results!)
+            {
+                Assert.IsTrue(r.Value<bool>("ok"), $"Patch failed: {r}");
+            }
+
+            var asset = AssetDatabase.LoadAssetAtPath<ManageScriptableObjectTestDefinition>(_createdAssetPath);
+            Assert.IsNotNull(asset);
+            Assert.AreEqual(2, asset!.Features.Count, "Both managed-reference elements should be appended.");
+            Assert.IsInstanceOf<ManageScriptableObjectDamageFeature>(asset.Features[0], "Element 0 concrete type should come from '$type'.");
+            Assert.IsInstanceOf<ManageScriptableObjectHealFeature>(asset.Features[1], "Element 1 concrete type should come from '$type'.");
+            Assert.AreEqual(7, ((ManageScriptableObjectDamageFeature)asset.Features[0]).amount, "Element 0 field should be patched.");
+            Assert.AreEqual(1.5f, ((ManageScriptableObjectHealFeature)asset.Features[1]).rate, 1e-4f, "Element 1 field should be patched.");
+        }
+
+        [Test]
+        public void DryRun_SerializeReferenceAppend_RequiresType()
+        {
+            var create = new JObject
+            {
+                ["action"] = "create",
+                ["typeName"] = typeof(ManageScriptableObjectTestDefinition).FullName,
+                ["folderPath"] = _runRoot,
+                ["assetName"] = "SerializeReference_DryRun",
+                ["overwrite"] = true,
+                ["patches"] = new JArray
+                {
+                    new JObject
+                    {
+                        ["propertyPath"] = "features.Array.data[0]",
+                        ["op"] = "set",
+                        ["value"] = new JObject
+                        {
+                            ["$type"] = typeof(ManageScriptableObjectDamageFeature).FullName,
+                            ["amount"] = 1
+                        }
+                    }
+                }
+            };
+            var createRes = ToJObject(ManageScriptableObject.HandleCommand(create));
+            Assert.IsTrue(createRes.Value<bool>("success"), createRes.ToString());
+            _createdGuid = createRes["data"]?["guid"]?.ToString();
+            _createdAssetPath = createRes["data"]?["path"]?.ToString();
+
+            // Appending another element WITHOUT a '$type' must NOT be reported as valid
+            // (this was the dry-run false-positive that hid the real apply failure).
+            var dryBad = new JObject
+            {
+                ["action"] = "modify",
+                ["target"] = new JObject { ["guid"] = _createdGuid },
+                ["dryRun"] = true,
+                ["patches"] = new JArray
+                {
+                    new JObject { ["propertyPath"] = "features.Array.data[1]", ["op"] = "set", ["value"] = new JObject { ["amount"] = 3 } }
+                }
+            };
+            var badRes = ToJObject(ManageScriptableObject.HandleCommand(dryBad));
+            Assert.IsTrue(badRes.Value<bool>("success"), badRes.ToString());
+            Assert.IsFalse(badRes["data"]!.Value<bool>("valid"), "Dry-run must reject a managed-reference append with no '$type'.");
+
+            // The same append WITH a valid '$type' should validate ok.
+            var dryGood = new JObject
+            {
+                ["action"] = "modify",
+                ["target"] = new JObject { ["guid"] = _createdGuid },
+                ["dryRun"] = true,
+                ["patches"] = new JArray
+                {
+                    new JObject
+                    {
+                        ["propertyPath"] = "features.Array.data[1]",
+                        ["op"] = "set",
+                        ["value"] = new JObject { ["$type"] = typeof(ManageScriptableObjectHealFeature).FullName, ["rate"] = 2f }
+                    }
+                }
+            };
+            var goodRes = ToJObject(ManageScriptableObject.HandleCommand(dryGood));
+            Assert.IsTrue(goodRes.Value<bool>("success"), goodRes.ToString());
+            Assert.IsTrue(goodRes["data"]!.Value<bool>("valid"), "Dry-run should accept a managed-reference append with a resolvable '$type'.");
+        }
+
+        [Test]
         public void Errors_InvalidAction_TypeNotFound_TargetNotFound()
         {
             // invalid action
