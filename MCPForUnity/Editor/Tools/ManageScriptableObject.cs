@@ -37,6 +37,27 @@ namespace MCPForUnity.Editor.Tools
             "modifyso",
         };
 
+        // SerializedPropertyType values that ApplySet/TrySetValueRecursive can actually
+        // write. Used by dry-run so it doesn't green-light a patch the real apply would
+        // reject (the ManagedReference false-positive, plus Vector2Int/LayerMask/etc.).
+        private static readonly HashSet<SerializedPropertyType> SupportedSetTypes = new()
+        {
+            SerializedPropertyType.Integer,
+            SerializedPropertyType.Boolean,
+            SerializedPropertyType.Float,
+            SerializedPropertyType.String,
+            SerializedPropertyType.Enum,
+            SerializedPropertyType.Vector2,
+            SerializedPropertyType.Vector3,
+            SerializedPropertyType.Vector4,
+            SerializedPropertyType.Color,
+            SerializedPropertyType.ObjectReference,
+            SerializedPropertyType.AnimationCurve,
+            SerializedPropertyType.Quaternion,
+            SerializedPropertyType.ManagedReference,
+            SerializedPropertyType.Generic, // structs/classes/arrays via JObject/JArray
+        };
+
         public static object HandleCommand(JObject @params)
         {
             if (@params == null)
@@ -356,11 +377,21 @@ namespace MCPForUnity.Editor.Tools
                             if (arrayProp.arraySize > 0)
                             {
                                 var sampleElement = arrayProp.GetArrayElementAtIndex(0);
-                                results.Add(new { 
-                                    index = i, 
-                                    propertyPath = normalizedPath, 
-                                    op, 
-                                    ok = true, 
+                                // Appending to a [SerializeReference] element array needs a
+                                // resolvable '$type' — validate it here instead of returning a
+                                // false-positive that only fails at apply.
+                                if (sampleElement != null && sampleElement.propertyType == SerializedPropertyType.ManagedReference
+                                    && !ValidateManagedReferenceFormat(patchObj["value"], null, out string mrMsg))
+                                {
+                                    results.Add(new { index = i, propertyPath = normalizedPath, op, ok = false,
+                                        message = mrMsg, elementType = "ManagedReference" });
+                                    continue;
+                                }
+                                results.Add(new {
+                                    index = i,
+                                    propertyPath = normalizedPath,
+                                    op,
+                                    ok = true,
                                     message = $"Will auto-grow array from {arrayProp.arraySize} to {targetIndex + 1}.",
                                     elementType = sampleElement?.propertyType.ToString() ?? "unknown"
                                 });
@@ -388,13 +419,23 @@ namespace MCPForUnity.Editor.Tools
 
                 if (prop != null)
                 {
+                    // Reject types the real apply can't write, so dry-run doesn't
+                    // green-light a patch that only fails at apply time.
+                    if (!SupportedSetTypes.Contains(prop.propertyType))
+                    {
+                        results.Add(new { index = i, propertyPath = normalizedPath, op, ok = false,
+                            message = $"Unsupported property type '{prop.propertyType}' cannot be set via patches.",
+                            propertyType = prop.propertyType.ToString(), isArray = prop.isArray });
+                        continue;
+                    }
+
                     // Property exists - validate value format for supported complex types
                     var valueToken = patchObj["value"];
                     string valueValidationMsg = null;
                     bool valueFormatOk = true;
-                    
-                    // Enhanced dry-run: validate value format for AnimationCurve and Quaternion
-                    // Uses shared validators from VectorParsing
+
+                    // Enhanced dry-run: validate value format for AnimationCurve, Quaternion,
+                    // and ManagedReference ([SerializeReference]). Uses shared validators.
                     if (valueToken != null && valueToken.Type != JTokenType.Null)
                     {
                         switch (prop.propertyType)
@@ -404,6 +445,9 @@ namespace MCPForUnity.Editor.Tools
                                 break;
                             case SerializedPropertyType.Quaternion:
                                 valueFormatOk = VectorParsing.ValidateQuaternionFormat(valueToken, out valueValidationMsg);
+                                break;
+                            case SerializedPropertyType.ManagedReference:
+                                valueFormatOk = ValidateManagedReferenceFormat(valueToken, prop, out valueValidationMsg);
                                 break;
                         }
                     }
@@ -1016,6 +1060,9 @@ namespace MCPForUnity.Editor.Tools
                     case SerializedPropertyType.Quaternion:
                         return TrySetQuaternion(prop, valueToken, out message);
 
+                    case SerializedPropertyType.ManagedReference:
+                        return TrySetManagedReference(prop, valueToken, out message, depth);
+
                     case SerializedPropertyType.Generic:
                         // Generic properties (structs/classes) should be handled above with JObject mapping
                         // If we get here, the value wasn't a JObject
@@ -1289,6 +1336,143 @@ namespace MCPForUnity.Editor.Tools
                 message = $"Failed to parse Quaternion: {ex.Message}";
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Sets a [SerializeReference] (managed reference) property. The JSON value carries a
+        /// "$type" discriminator naming the concrete type to instantiate ("type" is accepted as
+        /// an alias); the remaining keys are mapped onto the instance's serialized fields.
+        /// A null value clears the reference. Omitting "$type" patches the fields of the
+        /// already-assigned instance (fails if none is assigned yet).
+        /// </summary>
+        private static bool TrySetManagedReference(SerializedProperty prop, JToken valueToken, out string message, int depth)
+        {
+            message = null;
+
+            if (valueToken == null || valueToken.Type == JTokenType.Null)
+            {
+                prop.managedReferenceValue = null;
+                message = "Cleared managed reference.";
+                return true;
+            }
+
+            if (valueToken is not JObject jObj)
+            {
+                message = "ManagedReference ([SerializeReference]) requires an object with a '$type' key, e.g. { \"$type\": \"Namespace.MyType\", ... }.";
+                return false;
+            }
+
+            string usedKey = jObj["$type"] != null ? "$type" : (jObj["type"] != null ? "type" : null);
+            string typeName = usedKey != null ? jObj[usedKey]?.ToString() : null;
+
+            Type concreteType = null;
+            if (!string.IsNullOrWhiteSpace(typeName))
+            {
+                concreteType = ResolveType(typeName);
+                if (concreteType == null)
+                {
+                    message = $"ManagedReference type not found: '{typeName}'.";
+                    return false;
+                }
+            }
+
+            string basePath = prop.propertyPath;
+            var so = prop.serializedObject;
+
+            // Instantiate + assign only when a *new* concrete type is requested. Assigning
+            // the instance and persisting it is what makes the child fields resolvable.
+            if (concreteType != null && !ManagedRefIsType(prop, concreteType))
+            {
+                object instance;
+                try { instance = Activator.CreateInstance(concreteType); }
+                catch (Exception ex) { message = $"Could not instantiate '{concreteType.FullName}': {ex.Message}"; return false; }
+
+                prop.managedReferenceValue = instance;
+                so.ApplyModifiedProperties();
+                so.Update();
+            }
+            else if (concreteType == null && string.IsNullOrEmpty(prop.managedReferenceFullTypename))
+            {
+                message = "ManagedReference is null; provide '$type' to assign a concrete type.";
+                return false;
+            }
+
+            // Map the remaining keys onto the instance's serialized fields.
+            int successCount = 0;
+            int fieldCount = 0;
+            var errors = new List<string>();
+            foreach (var kvp in jObj)
+            {
+                if (kvp.Key == usedKey) continue;
+                fieldCount++;
+                var childProp = so.FindProperty(basePath + "." + kvp.Key);
+                if (childProp == null) { errors.Add($"Property not found: {kvp.Key}"); continue; }
+                if (TrySetValueRecursive(childProp, kvp.Value, out string cm, depth + 1)) successCount++;
+                else errors.Add($"{kvp.Key}: {cm}");
+            }
+            so.ApplyModifiedProperties();
+
+            string typeLabel = concreteType?.FullName ?? ManagedRefTypeName(prop);
+            if (errors.Count > 0)
+            {
+                message = $"Set managed reference '{typeLabel}' ({successCount}/{fieldCount} fields). Errors: {string.Join("; ", errors)}";
+                return successCount > 0;
+            }
+            message = $"Set managed reference to '{typeLabel}'.";
+            return true;
+        }
+
+        /// <summary>Concrete type name currently assigned to a managed reference, or "(null)".</summary>
+        private static string ManagedRefTypeName(SerializedProperty prop)
+        {
+            // managedReferenceFullTypename is "<assemblyName> <typeFullName>" when assigned.
+            string full = prop.managedReferenceFullTypename;
+            if (string.IsNullOrEmpty(full)) return "(null)";
+            int sp = full.IndexOf(' ');
+            return sp >= 0 ? full.Substring(sp + 1) : full;
+        }
+
+        private static bool ManagedRefIsType(SerializedProperty prop, Type type)
+        {
+            return string.Equals(ManagedRefTypeName(prop), type.FullName, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        /// Dry-run validator for a ManagedReference patch value. Mirrors TrySetManagedReference's
+        /// requirements without mutating anything. Pass prop=null when validating a not-yet-created
+        /// array element (append), which forces a '$type' to be present.
+        /// </summary>
+        private static bool ValidateManagedReferenceFormat(JToken valueToken, SerializedProperty prop, out string message)
+        {
+            message = null;
+            if (valueToken == null || valueToken.Type == JTokenType.Null)
+            {
+                message = "Will clear managed reference.";
+                return true;
+            }
+            if (valueToken is not JObject jObj)
+            {
+                message = "ManagedReference requires an object with a '$type' key.";
+                return false;
+            }
+            string typeName = jObj["$type"]?.ToString() ?? jObj["type"]?.ToString();
+            if (string.IsNullOrWhiteSpace(typeName))
+            {
+                if (prop == null || string.IsNullOrEmpty(prop.managedReferenceFullTypename))
+                {
+                    message = "ManagedReference requires a '$type' key naming the concrete type.";
+                    return false;
+                }
+                message = "Will patch existing managed reference fields.";
+                return true;
+            }
+            if (ResolveType(typeName) == null)
+            {
+                message = $"ManagedReference type not found: '{typeName}'.";
+                return false;
+            }
+            message = $"Will assign managed reference of type '{typeName}'.";
+            return true;
         }
 
         private static bool TryResolveTarget(JToken targetToken, out UnityEngine.Object target, out string targetPath, out string targetGuid, out object error)

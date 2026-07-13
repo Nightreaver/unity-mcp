@@ -50,7 +50,12 @@ async def manage_scriptable_object(
                        "Patch list (or JSON string) to apply. "
                        "For object references: use {\"ref\": {\"guid\": \"...\"}} or {\"value\": {\"guid\": \"...\"}}. "
                        "For Sprite sub-assets: include \"spriteName\" in the ref/value object. "
-                       "Single-sprite textures auto-resolve from guid/path alone."] = None,
+                       "Single-sprite textures auto-resolve from guid/path alone. "
+                       "For [SerializeReference] (managed reference) fields, pass a value object with a "
+                       "\"$type\" discriminator naming the concrete type, plus its fields, e.g. "
+                       "{\"value\": {\"$type\": \"My.Namespace.MyFeature\", \"amount\": 7}}; a null value clears "
+                       "the reference. Appending to a [SerializeReference] list works via the same "
+                       "array_resize / auto-grow index paths as other arrays."] = None,
     # --- validation ---
     dry_run: Annotated[bool | str | None,
                        "If true, validate patches without applying (modify only)."] = None,
