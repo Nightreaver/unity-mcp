@@ -809,6 +809,12 @@ namespace MCPForUnity.Editor.Tools
         // renders into them automatically every frame.
         private static readonly Dictionary<int, RenderTexture> s_panelRTs = new();
 
+        // Persistent temp panels for the direct-UXML editor render handshake, keyed
+        // by UXML asset path.  UI Toolkit only paints into the RenderTexture during
+        // the editor repaint loop that runs *between* the two render_ui calls, so the
+        // panel must survive from the assign-RT call to the read-pixels call.
+        private static readonly Dictionary<string, GameObject> s_uxmlRenderGos = new();
+
         // Play-mode coroutine capture state.  Only one capture is in-flight at a
         // time; concurrent render_ui calls while a capture is pending are rejected
         // with an explicit error.
@@ -960,7 +966,7 @@ namespace MCPForUnity.Editor.Tools
             // Resolve UIDocument
             UIDocument uiDoc = null;
             GameObject tempGo = null;
-            PanelSettings tempPs = null;
+            bool keepTempGo = false;
 
             try
             {
@@ -985,22 +991,33 @@ namespace MCPForUnity.Editor.Tools
                     if (vta == null)
                         return new ErrorResponse($"Could not load VisualTreeAsset at: {uxmlPath}");
 
-                    tempGo = new GameObject("__MCP_UI_Render_Temp__");
-                    tempGo.hideFlags = HideFlags.HideAndDontSave;
-                    uiDoc = tempGo.AddComponent<UIDocument>();
-
-                    string[] guids = AssetDatabase.FindAssets("t:PanelSettings");
-                    PanelSettings ps = null;
-                    if (guids.Length > 0)
-                        ps = AssetDatabase.LoadAssetAtPath<PanelSettings>(AssetDatabase.GUIDToAssetPath(guids[0]));
-                    if (ps == null)
+                    // Reuse the cached temp panel for this UXML if one is still alive
+                    // (first call assigned the RT; this is the follow-up read call).
+                    // Otherwise build a fresh one and cache it for the next call.
+                    if (s_uxmlRenderGos.TryGetValue(uxmlPath, out var cachedGo) && cachedGo != null)
                     {
-                        ps = CreateDefaultPanelSettings("Assets/UI/DefaultPanelSettings.asset");
-                        tempPs = ps;
+                        tempGo = cachedGo;
+                        uiDoc = tempGo.GetComponent<UIDocument>();
                     }
+                    else
+                    {
+                        tempGo = new GameObject("__MCP_UI_Render_Temp__");
+                        tempGo.hideFlags = HideFlags.HideAndDontSave;
+                        uiDoc = tempGo.AddComponent<UIDocument>();
 
-                    uiDoc.panelSettings = ps;
-                    uiDoc.visualTreeAsset = vta;
+                        string[] guids = AssetDatabase.FindAssets("t:PanelSettings");
+                        PanelSettings ps = null;
+                        if (guids.Length > 0)
+                            ps = AssetDatabase.LoadAssetAtPath<PanelSettings>(AssetDatabase.GUIDToAssetPath(guids[0]));
+                        // Auto-created default is kept as a normal project asset
+                        // (matches AttachUIDocument) — no per-call create/delete churn.
+                        if (ps == null)
+                            ps = CreateDefaultPanelSettings("Assets/UI/DefaultPanelSettings.asset");
+
+                        uiDoc.panelSettings = ps;
+                        uiDoc.visualTreeAsset = vta;
+                        s_uxmlRenderGos[uxmlPath] = tempGo;
+                    }
                 }
 
                 if (uiDoc.panelSettings == null)
@@ -1101,6 +1118,11 @@ namespace MCPForUnity.Editor.Tools
                     if (pixels[i].a > 0) { hasContent = true; break; }
                 }
 
+                // Direct-UXML editor path: the panel needs a repaint pass between
+                // assigning the RT and reading it. Keep the temp panel alive for the
+                // follow-up call until content actually shows up.
+                keepTempGo = rtJustAssigned && !hasContent;
+
                 // Save to Screenshots folder
                 string resolvedName = string.IsNullOrWhiteSpace(fileName)
                     ? $"ui-render-{DateTime.Now:yyyyMMdd-HHmmss}.png"
@@ -1174,14 +1196,14 @@ namespace MCPForUnity.Editor.Tools
             }
             finally
             {
-                if (tempGo != null) UnityEngine.Object.DestroyImmediate(tempGo);
-                if (tempPs != null)
+                // Keep the temp panel alive between the assign-RT call and the
+                // read-pixels call; destroy it once we've captured content (or on a
+                // genuinely blank panel) so it doesn't linger in the scene.
+                if (tempGo != null && !keepTempGo)
                 {
-                    string tempPsPath = AssetDatabase.GetAssetPath(tempPs);
-                    if (!string.IsNullOrEmpty(tempPsPath))
-                        AssetDatabase.DeleteAsset(tempPsPath);
-                    else
-                        UnityEngine.Object.DestroyImmediate(tempPs, true);
+                    if (!string.IsNullOrEmpty(uxmlPath))
+                        s_uxmlRenderGos.Remove(uxmlPath);
+                    UnityEngine.Object.DestroyImmediate(tempGo);
                 }
             }
         }
