@@ -474,6 +474,7 @@ def build_screenshot_params(
     view_position: list[float] | str | None = None,
     view_rotation: list[float] | str | None = None,
     output_folder: str | None = None,
+    game_view_size: str | None = None,
 ) -> dict[str, Any] | None:
     """Populate screenshot-related keys in *params* dict. Returns an error dict
     if validation fails, or None on success.
@@ -507,6 +508,15 @@ def build_screenshot_params(
                 "message": "capture_source must be either 'game_view' or 'scene_view'.",
             }
         params["captureSource"] = normalized_capture_source
+    if game_view_size:
+        trimmed_size = str(game_view_size).strip()
+        if trimmed_size:
+            if params.get("captureSource") == "scene_view":
+                return {
+                    "success": False,
+                    "message": "game_view_size only applies to capture_source='game_view'.",
+                }
+            params["gameViewSize"] = trimmed_size
     if batch:
         params["batch"] = batch
     if view_target is not None:

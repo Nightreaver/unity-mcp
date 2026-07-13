@@ -30,6 +30,7 @@ namespace MCPForUnity.Editor.Tools
             // screenshot: camera selection, inline image, batch, view positioning
             public string camera { get; set; }
             public string captureSource { get; set; }   // "game_view" (default) or "scene_view"
+            public string gameViewSize { get; set; }     // optional Game View resolution/aspect preset (game_view only)
             public bool? includeImage { get; set; }
             public int? maxResolution { get; set; }
             public string outputFolder { get; set; }    // optional override; null falls back to user pref / Assets/Screenshots
@@ -108,6 +109,7 @@ namespace MCPForUnity.Editor.Tools
                 // screenshot: camera selection, inline image, batch, view positioning
                 camera = (p["camera"])?.ToString(),
                 captureSource = toolParams.Get("capture_source"),
+                gameViewSize = toolParams.Get("game_view_size") ?? toolParams.Get("gameViewSize"),
                 includeImage = ParamCoercion.CoerceBoolNullable(p["includeImage"] ?? p["include_image"]),
                 maxResolution = ParamCoercion.CoerceIntNullable(p["maxResolution"] ?? p["max_resolution"]),
                 outputFolder = (p["outputFolder"] ?? p["output_folder"])?.ToString(),
@@ -572,6 +574,21 @@ namespace MCPForUnity.Editor.Tools
                 if ((cmd.viewTarget != null && cmd.viewTarget.Type != JTokenType.Null) || cmd.viewPosition.HasValue)
                 {
                     return CapturePositionedScreenshot(cmd);
+                }
+
+                // Optional Game View size/aspect selection (e.g. "Full HD (1920x1080)", "16:9 Aspect").
+                // Applies to every game_view capture below. We intentionally do NOT restore the prior
+                // size: the default capture path is asynchronous (ScreenCapture writes next frame), so
+                // restoring here would race the pending capture and shrink it back. The Game View is
+                // left at the chosen size, exactly as if it were picked from the toolbar dropdown.
+                if (!string.IsNullOrWhiteSpace(cmd.gameViewSize))
+                {
+                    if (Application.isBatchMode)
+                        return new ErrorResponse("game_view_size is not supported in batch mode (no Game View window).");
+                    if (!GameViewSizeUtility.TryResolve(cmd.gameViewSize, out var gvMatch, out _, out string gvErr))
+                        return new ErrorResponse(gvErr);
+                    if (!GameViewSizeUtility.TrySelect(gvMatch.Index, out _, out string gvSelErr))
+                        return new ErrorResponse(gvSelErr);
                 }
 
                 // Batch mode warning

@@ -68,7 +68,9 @@ ALL_ACTIONS = SETUP_ACTIONS + CREATION_ACTIONS + CONFIGURATION_ACTIONS + EXTENSI
         "Supports include_image=true for inline base64 PNG, "
         "batch='surround' for 6-angle contact sheet, batch='orbit' for configurable grid, "
         "view_target/view_position for positioned capture, and capture_source='scene_view' to capture "
-        "the active Unity Scene View viewport.\n"
+        "the active Unity Scene View viewport. "
+        "game_view_size selects a Game View resolution/aspect preset (e.g. 'Full HD (1920x1080)', '4K UHD "
+        "(3840x2160)', '16:9 Aspect') before capturing, matching the Game View toolbar dropdown.\n"
         "- screenshot_multiview: Shorthand for screenshot with batch='surround' and include_image=true."
     ),
     annotations=ToolAnnotations(
@@ -126,6 +128,11 @@ async def manage_camera(
         "Optional folder for screenshot output. Project-relative (e.g. 'Assets/Screenshots' or 'Captures') "
         "or absolute path inside the project. Overrides the user's Editor preference. "
         "If omitted, falls back to the Editor preference, then to the built-in default (Assets/Screenshots)."] = None,
+    game_view_size: Annotated[str | None,
+        "Game View resolution/aspect preset to use for the capture, matching the Game View toolbar "
+        "dropdown. Accepts the exact label ('Full HD (1920x1080)', '4K UHD (3840x2160)', '16:9 Aspect'), "
+        "a 'WIDTHxHEIGHT' resolution ('1920x1080'), or a substring ('Full HD', '16:9'). game_view only; "
+        "the Game View is left at the selected size after capture (like choosing it in the dropdown)."] = None,
 ) -> dict[str, Any] | ToolResult:
     """Unified camera management tool (Unity Camera + Cinemachine)."""
 
@@ -180,6 +187,7 @@ async def manage_camera(
             view_position=view_position,
             view_rotation=view_rotation,
             output_folder=output_folder,
+            game_view_size=game_view_size,
         )
         if err is not None:
             return err
