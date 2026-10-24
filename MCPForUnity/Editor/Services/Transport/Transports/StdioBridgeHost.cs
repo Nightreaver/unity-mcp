@@ -1183,7 +1183,7 @@ namespace MCPForUnity.Editor.Services.Transport.Transports
             }
         }
 
-        private static string ComputeProjectHash(string input)
+        internal static string ComputeProjectHash(string input)
         {
             try
             {

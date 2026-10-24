@@ -52,6 +52,12 @@ unity-mcp instance set "ProjectName@abc123"
 
 # Show current instance
 unity-mcp instance current
+
+# Trigger a running (but disconnected) Unity Editor to start its MCP session,
+# same as clicking Connect in the MCP window. Optional arg targets one project
+# by folder name or hash prefix.
+unity-mcp instance connect
+unity-mcp instance connect MyProject --no-wait
 ```
 
 ### Scene Operations
@@ -485,7 +491,7 @@ unity-mcp raw manage_packages '{"action": "list_packages"}'
 
 | Group | Subcommands |
 |-------|-------------|
-| `instance` | `list`, `set`, `current` |
+| `instance` | `list`, `set`, `current`, `connect` |
 | `scene` | `hierarchy`, `active`, `load`, `save`, `create`, `build-settings` |
 | `code` | `read`, `search` |
 | `gameobject` | `find`, `create`, `modify`, `delete`, `duplicate`, `move` |

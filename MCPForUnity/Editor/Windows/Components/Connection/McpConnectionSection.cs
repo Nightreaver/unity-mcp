@@ -727,6 +727,7 @@ namespace MCPForUnity.Editor.Windows.Components.Connection
 
                     // Reflect the transient "Starting…" state on the button before the (possibly long) launch.
                     UpdateStartHttpButtonState();
+                    SessionState.EraseBool(ConnectTriggerWatcher.ManualSessionEndKey);
 
                     bool serverStarted = MCPServiceLocator.Server.StartLocalHttpServer();
                     if (serverStarted)
@@ -858,6 +859,8 @@ namespace MCPForUnity.Editor.Windows.Components.Connection
                     try { EditorPrefs.DeleteKey(EditorPrefKeys.ResumeStdioAfterReload); } catch { }
                     HttpBridgeReloadHandler.CancelPendingResume();
                     HttpAutoStartHandler.CancelPendingReconnect();
+                    // Deliberate end: keep the auto-connect watcher from reconnecting behind the user's back.
+                    SessionState.SetBool(ConnectTriggerWatcher.ManualSessionEndKey, true);
 
                     await bridgeService.StopAsync();
                     if (httpRemoteForLog)
@@ -867,6 +870,7 @@ namespace MCPForUnity.Editor.Windows.Components.Connection
                 }
                 else
                 {
+                    SessionState.EraseBool(ConnectTriggerWatcher.ManualSessionEndKey);
                     bool httpRemoteSelected = httpRemoteForLog;
                     if (httpRemoteSelected
                         && !HttpEndpointUtility.IsCurrentRemoteUrlAllowed(out string remotePolicyError))
