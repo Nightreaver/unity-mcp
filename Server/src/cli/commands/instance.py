@@ -1,7 +1,10 @@
 """Instance CLI commands for managing Unity instances."""
 
-import click
+import time
+from pathlib import Path
 from typing import Optional
+
+import click
 
 from cli.utils.config import get_config
 from cli.utils.output import format_output, print_error, print_success, print_info
@@ -70,6 +73,55 @@ def set_instance(instance_id: str):
         data = result.get("data", {})
         active = data.get("instance", instance_id)
         print_success(f"Active instance set to: {active}")
+
+
+@instance.command("connect")
+@click.argument("target", required=False)
+@click.option("--wait/--no-wait", default=True, show_default=True,
+              help="Wait until the instance shows up on the server.")
+@click.option("--timeout", "wait_timeout", default=20, show_default=True,
+              help="Seconds to wait for the instance to connect.")
+def connect_instance(target: Optional[str], wait: bool, wait_timeout: int):
+    """Trigger a running Unity Editor to start its MCP session.
+
+    Drops a trigger file (~/.unity-mcp/connect.trigger) that the MCP for Unity
+    plugin polls about once per second - same effect as clicking Connect /
+    Start Session in the MCP window. TARGET optionally limits the trigger to
+    one project (project folder name or project-hash prefix).
+
+    \\b
+    Examples:
+        unity-mcp instance connect
+        unity-mcp instance connect MyProject
+        unity-mcp instance connect abc123 --no-wait
+    """
+    trigger = Path.home() / ".unity-mcp" / "connect.trigger"
+    trigger.parent.mkdir(parents=True, exist_ok=True)
+    trigger.write_text(target or "", encoding="utf-8")
+    print_info(f"Connect trigger written: {trigger}")
+
+    if not wait:
+        return
+
+    config = get_config()
+    deadline = time.monotonic() + wait_timeout
+    while time.monotonic() < deadline:
+        try:
+            result = run_list_instances(config)
+            instances = result.get("instances", []) if isinstance(result, dict) else []
+            for inst in instances:
+                ident = f"{inst.get('project', '')}@{inst.get('hash', '')}"
+                if not target or target.lower() in ident.lower():
+                    print_success(f"Unity connected: {ident}")
+                    return
+        except Exception:
+            pass  # server not up yet; keep polling until the deadline
+        time.sleep(1)
+
+    print_error(
+        "Timed out waiting for Unity to connect. "
+        "Is the Editor open, the MCP server running, and the transport set to HTTP?")
+    raise SystemExit(1)
 
 
 @instance.command("current")

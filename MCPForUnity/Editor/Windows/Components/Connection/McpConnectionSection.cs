@@ -62,6 +62,12 @@ namespace MCPForUnity.Editor.Windows.Components.Connection
         private double lastLocalServerRunningPollTime;
         private bool lastLocalServerRunning;
 
+        // A single failed 50 ms probe (e.g. right after a long main-thread block) must not end a
+        // live session: require this many consecutive fresh probes to see the server gone.
+        private const int OrphanedSessionUnreachableThreshold = 3;
+        private int consecutiveUnreachableChecks;
+        private double lastCountedUnreachableProbeTime = -1;
+
         // Reference to Advanced section for health status updates
         private Action<bool, string> onHealthStatusUpdate;
 
@@ -335,11 +341,25 @@ namespace MCPForUnity.Editor.Windows.Components.Connection
 
             // Detect orphaned session: if HTTP Local session thinks it's running but the server is gone,
             // automatically end the session to keep UI in sync with reality.
+            // Only count each probe once (it is cached for 0.75 s and this runs from several callers).
             if (showLocalServerControls && isRunning && !lastLocalServerRunning && !connectionToggleInProgress)
             {
-                McpLog.Info("Server no longer running; ending orphaned session.");
-                _ = EndOrphanedSessionAsync();
-                isRunning = false; // Update local state for the rest of this method
+                if (lastLocalServerRunningPollTime != lastCountedUnreachableProbeTime)
+                {
+                    lastCountedUnreachableProbeTime = lastLocalServerRunningPollTime;
+                    consecutiveUnreachableChecks++;
+                }
+                if (consecutiveUnreachableChecks >= OrphanedSessionUnreachableThreshold)
+                {
+                    consecutiveUnreachableChecks = 0;
+                    McpLog.Info("Server no longer running; ending orphaned session.");
+                    _ = EndOrphanedSessionAsync();
+                    isRunning = false; // Update local state for the rest of this method
+                }
+            }
+            else
+            {
+                consecutiveUnreachableChecks = 0;
             }
 
             // For HTTP Local: show session toggle button only when server is running (so user can manually start/end session).
@@ -670,6 +690,7 @@ namespace MCPForUnity.Editor.Windows.Components.Connection
 
                     // Reflect the transient "Starting…" state on the button before the (possibly long) launch.
                     UpdateStartHttpButtonState();
+                    SessionState.EraseBool(ConnectTriggerWatcher.ManualSessionEndKey);
 
                     bool serverStarted = MCPServiceLocator.Server.StartLocalHttpServer();
                     if (serverStarted)
@@ -800,6 +821,8 @@ namespace MCPForUnity.Editor.Windows.Components.Connection
                     // domain reload that started just before the user clicked End Session)
                     try { EditorPrefs.DeleteKey(EditorPrefKeys.ResumeStdioAfterReload); } catch { }
                     try { EditorPrefs.DeleteKey(EditorPrefKeys.ResumeHttpAfterReload); } catch { }
+                    // Deliberate end: keep the auto-connect watcher from reconnecting behind the user's back.
+                    SessionState.SetBool(ConnectTriggerWatcher.ManualSessionEndKey, true);
 
                     await bridgeService.StopAsync();
                     if (httpRemoteForLog)
@@ -809,6 +832,7 @@ namespace MCPForUnity.Editor.Windows.Components.Connection
                 }
                 else
                 {
+                    SessionState.EraseBool(ConnectTriggerWatcher.ManualSessionEndKey);
                     bool httpRemoteSelected = httpRemoteForLog;
                     if (httpRemoteSelected
                         && !HttpEndpointUtility.IsCurrentRemoteUrlAllowed(out string remotePolicyError))

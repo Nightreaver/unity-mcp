@@ -16,6 +16,9 @@ namespace MCPForUnity.Editor.Services.Transport
         private TransportState _stdioState = TransportState.Disconnected("stdio");
         private Func<IMcpTransportClient> _webSocketFactory;
         private Func<IMcpTransportClient> _stdioFactory;
+        private readonly object _startLock = new object();
+        private Task<bool> _httpStartTask;
+        private Task<bool> _stdioStartTask;
 
         public TransportManager()
         {
@@ -42,7 +45,29 @@ namespace MCPForUnity.Editor.Services.Transport
             };
         }
 
-        public async Task<bool> StartAsync(TransportMode mode)
+        /// <summary>
+        /// Single-flight per mode: a caller arriving while a start is in flight awaits that start
+        /// instead of launching a second one (a failing second start would StopAsync the client
+        /// under the first, leaving the state Connected on a dead session).
+        /// </summary>
+        public Task<bool> StartAsync(TransportMode mode)
+        {
+            lock (_startLock)
+            {
+                Task<bool> inFlight = mode == TransportMode.Http ? _httpStartTask : _stdioStartTask;
+                if (inFlight != null && !inFlight.IsCompleted)
+                {
+                    return inFlight;
+                }
+
+                Task<bool> task = StartCoreAsync(mode);
+                if (mode == TransportMode.Http) _httpStartTask = task;
+                else _stdioStartTask = task;
+                return task;
+            }
+        }
+
+        private async Task<bool> StartCoreAsync(TransportMode mode)
         {
             IMcpTransportClient client = GetOrCreateClient(mode);
 
