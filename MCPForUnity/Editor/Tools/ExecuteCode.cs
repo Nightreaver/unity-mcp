@@ -222,13 +222,14 @@ namespace MCPForUnity.Editor.Tools
 
         private readonly struct CompileOutcome
         {
-            public CompileOutcome(Assembly assembly, List<string> errors)
+            public CompileOutcome(byte[] image, List<string> errors)
             {
-                Assembly = assembly;
+                Image = image;
                 Errors = errors;
             }
 
-            public Assembly Assembly { get; }
+            /// <summary>The emitted assembly image; null when compilation failed.</summary>
+            public byte[] Image { get; }
             public List<string> Errors { get; }
         }
 
@@ -267,27 +268,31 @@ namespace MCPForUnity.Editor.Tools
                 ? await Task.Run(() => CompileBlocking(wrappedSource, usedCompiler, assemblyPaths, codeDomPaths))
                 : CompileBlocking(wrappedSource, usedCompiler, assemblyPaths, codeDomPaths);
 
-            if (outcome.Assembly == null)
+            if (outcome.Image == null)
                 return new ErrorResponse("Compilation failed", new { errors = OffsetErrors(outcome.Errors), compiler = usedCompiler });
+
+            // Loaded here, on the calling (main) thread: AppDomain.AssemblyLoad handlers in the
+            // project (e.g. inspector/serialization assembly trackers) must not run on the pool.
+            Assembly compiled = Assembly.Load(outcome.Image);
 
             // Bound the cache so a stream of genuinely distinct snippets cannot itself become
             // the leak. Clearing wholesale is enough: the entries are only a compile shortcut.
             if (_compiledCache.Count >= MaxCompiledCacheEntries)
                 _compiledCache.Clear();
-            _compiledCache[cacheKey] = new CompiledSnippet(outcome.Assembly, usedCompiler);
+            _compiledCache[cacheKey] = new CompiledSnippet(compiled, usedCompiler);
 
-            return InvokeCompiled(outcome.Assembly, usedCompiler);
+            return InvokeCompiled(compiled, usedCompiler);
         }
 
-        /// <summary>Compiles and loads the snippet; touches no Unity API, so it may run on any thread.</summary>
+        /// <summary>Compiles the snippet to an assembly image without loading it; touches no Unity API, so it may run on any thread.</summary>
         private static CompileOutcome CompileBlocking(string wrappedSource, string usedCompiler, string[] assemblyPaths, string[] codeDomPaths)
         {
             LastCompileThreadId = Thread.CurrentThread.ManagedThreadId;
             List<string> errors;
-            Assembly compiled = usedCompiler == "roslyn"
+            byte[] image = usedCompiler == "roslyn"
                 ? RoslynCompiler.Compile(wrappedSource, assemblyPaths, out errors)
                 : CodeDomCompile(wrappedSource, codeDomPaths, out errors);
-            return new CompileOutcome(compiled, errors);
+            return new CompileOutcome(image, errors);
         }
 
         private static object InvokeCompiled(Assembly assembly, string compilerUsed)
@@ -337,7 +342,7 @@ namespace MCPForUnity.Editor.Tools
 
         // filtered: the netstandard-aware paths from FilterAssemblyPathsForCodeDom, resolved by
         // the caller on the main thread (that filter fills a static cache).
-        private static Assembly CodeDomCompile(string source, string[] filtered, out List<string> errors)
+        private static byte[] CodeDomCompile(string source, string[] filtered, out List<string> errors)
         {
             errors = new List<string>();
 
@@ -363,7 +368,7 @@ namespace MCPForUnity.Editor.Tools
                 // Compile to a controlled DLL path instead of in-memory. mcs prints a stray BOM line on
                 // stdout that Mono's CodeDom can't parse, so it fabricates a bogus error (no error number,
                 // text is just the BOM) and refuses to surface the assembly — even though mcs exits 0 and
-                // wrote the DLL. We skip that bogus error and Assembly.Load the produced DLL ourselves.
+                // wrote the DLL. We skip that bogus error and read the produced DLL ourselves.
                 string outputAssemblyPath = Path.Combine(Path.GetTempPath(), $"mcp-codedom-{Guid.NewGuid():N}.dll");
                 using (var provider = new CSharpCodeProvider())
                 {
@@ -405,7 +410,7 @@ namespace MCPForUnity.Editor.Tools
                             return null;
                         }
 
-                        return Assembly.Load(File.ReadAllBytes(outputAssemblyPath));
+                        return File.ReadAllBytes(outputAssemblyPath);
                     }
                     finally
                     {
@@ -832,7 +837,8 @@ namespace MCPForUnity.Editor.Tools
             }
         }
 
-        public static Assembly Compile(string source, string[] assemblyPaths, out List<string> errors)
+        /// <summary>Emits the assembly image (not loaded); the caller loads it on the main thread.</summary>
+        public static byte[] Compile(string source, string[] assemblyPaths, out List<string> errors)
         {
             errors = new List<string>();
 
@@ -904,7 +910,7 @@ namespace MCPForUnity.Editor.Tools
                     }
 
                     ms.Seek(0, SeekOrigin.Begin);
-                    return Assembly.Load(ms.ToArray());
+                    return ms.ToArray();
                 }
             }
             catch (Exception e)

@@ -32,7 +32,7 @@ namespace MCPForUnity.Editor.Services
         private const double TriggerMaxAgeSeconds = 15.0;
         private const double ReachabilityPollIntervalSeconds = 3.0;
         private const double FailedStartBackoffSeconds = 15.0;
-        // A single 50 ms probe can fail after a main-thread stall; only this many in a row mark
+        // A single (250 ms) connect probe can fail after a main-thread stall; only this many in a row mark
         // the server as down (so the next reachable probe counts as a restart).
         private const int UnreachableProbesForServerDown = 3;
         private const string ServerWasReachableKey = "ConnectTriggerWatcher.ServerWasReachable";
@@ -159,6 +159,17 @@ namespace MCPForUnity.Editor.Services
                     return;
                 }
 
+                // Already connected: nothing to heal, and the probe is a blocking connect
+                // attempt on the main thread. A running HTTP Local session implies the server
+                // is up, so record it as reachable: a later manual End Session must not look
+                // like a server (re)start (rising edge) on the next probe.
+                if (MCPServiceLocator.Bridge.IsRunning)
+                {
+                    consecutiveUnreachableProbes = 0;
+                    SessionState.SetBool(ServerWasReachableKey, true);
+                    return;
+                }
+
                 bool reachable = MCPServiceLocator.Server.IsLocalHttpServerReachable();
                 bool wasReachable = SessionState.GetBool(ServerWasReachableKey, false);
                 if (reachable)
@@ -171,7 +182,7 @@ namespace MCPForUnity.Editor.Services
                     SessionState.SetBool(ServerWasReachableKey, false);
                 }
 
-                if (!reachable || MCPServiceLocator.Bridge.IsRunning)
+                if (!reachable)
                 {
                     return;
                 }

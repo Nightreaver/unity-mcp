@@ -198,3 +198,19 @@ def test_message_wins_over_error_when_both_present(monkeypatch):
     )
     result = asyncio.run(execute_code(SimpleNamespace(), action="execute", code="return 1;"))
     assert result["message"] == "Compilation failed"
+
+
+def test_failure_without_any_text_gets_placeholder(monkeypatch):
+    async def fake_send(send_fn, unity_instance, tool_name, params):
+        return {"success": False, "message": None, "error": None}
+
+    monkeypatch.setattr(
+        "services.tools.execute_code.get_unity_instance_from_context",
+        AsyncMock(return_value="unity-instance-1"),
+    )
+    monkeypatch.setattr(
+        "services.tools.execute_code.send_with_unity_instance",
+        fake_send,
+    )
+    result = asyncio.run(execute_code(SimpleNamespace(), action="execute", code="return 1;"))
+    assert result["message"] == "Unity returned no message"

@@ -98,6 +98,7 @@ async def execute_code(
         "success": response.get("success", False),
         # MCPResponse.model_dump() always carries a "message" key (often None) next to
         # "error", so a .get() default would never fall through to the error text.
-        "message": response.get("message") or response.get("error") or "",
+        "message": response.get("message") or response.get("error")
+        or ("" if response.get("success") else "Unity returned no message"),
         "data": response.get("data"),
     }
