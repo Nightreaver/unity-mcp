@@ -2,7 +2,10 @@ using System;
 using System.CodeDom.Compiler;
 using System.IO;
 using System.Linq;
+using System.Collections.Generic;
 using System.Reflection;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.CSharp;
 using Newtonsoft.Json.Linq;
 using NUnit.Framework;
@@ -16,7 +19,7 @@ namespace MCPForUnityTests.Editor.Tools
         [SetUp]
         public void SetUp()
         {
-            ExecuteCode.HandleCommand(new JObject { ["action"] = "clear_history" });
+            ExecuteCode.HandleCommandSync(new JObject { ["action"] = "clear_history" });
         }
 
         // ──────────────────── Execute: success cases ────────────────────
@@ -134,7 +137,7 @@ namespace MCPForUnityTests.Editor.Tools
         [Test]
         public void Execute_MissingCode_ReturnsError()
         {
-            var result = ToJObject(ExecuteCode.HandleCommand(new JObject
+            var result = ToJObject(ExecuteCode.HandleCommandSync(new JObject
             {
                 ["action"] = "execute"
             }));
@@ -146,7 +149,7 @@ namespace MCPForUnityTests.Editor.Tools
         [Test]
         public void Execute_EmptyCode_ReturnsError()
         {
-            var result = ToJObject(ExecuteCode.HandleCommand(new JObject
+            var result = ToJObject(ExecuteCode.HandleCommandSync(new JObject
             {
                 ["action"] = "execute",
                 ["code"] = "   "
@@ -187,7 +190,7 @@ namespace MCPForUnityTests.Editor.Tools
         [Test]
         public void Execute_SafetyChecksDisabled_AllowsBlockedPattern()
         {
-            var result = ToJObject(ExecuteCode.HandleCommand(new JObject
+            var result = ToJObject(ExecuteCode.HandleCommandSync(new JObject
             {
                 ["action"] = "execute",
                 ["code"] = "while (true) { break; }  return null;",
@@ -207,7 +210,7 @@ namespace MCPForUnityTests.Editor.Tools
         [Test]
         public void GetHistory_Empty_ReturnsZero()
         {
-            var result = ToJObject(ExecuteCode.HandleCommand(new JObject
+            var result = ToJObject(ExecuteCode.HandleCommandSync(new JObject
             {
                 ["action"] = "get_history"
             }));
@@ -221,7 +224,7 @@ namespace MCPForUnityTests.Editor.Tools
         {
             Execute("return 1;");
 
-            var result = ToJObject(ExecuteCode.HandleCommand(new JObject
+            var result = ToJObject(ExecuteCode.HandleCommandSync(new JObject
             {
                 ["action"] = "get_history"
             }));
@@ -241,7 +244,7 @@ namespace MCPForUnityTests.Editor.Tools
             Execute("return 2;");
             Execute("return 3;");
 
-            var result = ToJObject(ExecuteCode.HandleCommand(new JObject
+            var result = ToJObject(ExecuteCode.HandleCommandSync(new JObject
             {
                 ["action"] = "get_history",
                 ["limit"] = 2
@@ -259,13 +262,13 @@ namespace MCPForUnityTests.Editor.Tools
             Execute("return 1;");
             Execute("return 2;");
 
-            var clearResult = ToJObject(ExecuteCode.HandleCommand(new JObject
+            var clearResult = ToJObject(ExecuteCode.HandleCommandSync(new JObject
             {
                 ["action"] = "clear_history"
             }));
             Assert.IsTrue(clearResult.Value<bool>("success"), clearResult.ToString());
 
-            var historyResult = ToJObject(ExecuteCode.HandleCommand(new JObject
+            var historyResult = ToJObject(ExecuteCode.HandleCommandSync(new JObject
             {
                 ["action"] = "get_history"
             }));
@@ -279,7 +282,7 @@ namespace MCPForUnityTests.Editor.Tools
         {
             Execute("return 42;");
 
-            var result = ToJObject(ExecuteCode.HandleCommand(new JObject
+            var result = ToJObject(ExecuteCode.HandleCommandSync(new JObject
             {
                 ["action"] = "replay",
                 ["index"] = 0
@@ -294,7 +297,7 @@ namespace MCPForUnityTests.Editor.Tools
         {
             Execute("return 1;");
 
-            var result = ToJObject(ExecuteCode.HandleCommand(new JObject
+            var result = ToJObject(ExecuteCode.HandleCommandSync(new JObject
             {
                 ["action"] = "replay",
                 ["index"] = 99
@@ -307,7 +310,7 @@ namespace MCPForUnityTests.Editor.Tools
         [Test]
         public void Replay_EmptyHistory_ReturnsError()
         {
-            var result = ToJObject(ExecuteCode.HandleCommand(new JObject
+            var result = ToJObject(ExecuteCode.HandleCommandSync(new JObject
             {
                 ["action"] = "replay",
                 ["index"] = 0
@@ -321,7 +324,7 @@ namespace MCPForUnityTests.Editor.Tools
         [Test]
         public void UnknownAction_ReturnsError()
         {
-            var result = ToJObject(ExecuteCode.HandleCommand(new JObject
+            var result = ToJObject(ExecuteCode.HandleCommandSync(new JObject
             {
                 ["action"] = "invalid_action"
             }));
@@ -333,7 +336,7 @@ namespace MCPForUnityTests.Editor.Tools
         [Test]
         public void NullParams_ReturnsError()
         {
-            var result = ToJObject(ExecuteCode.HandleCommand(null));
+            var result = ToJObject(ExecuteCode.HandleCommandSync(null));
 
             Assert.IsFalse(result.Value<bool>("success"), result.ToString());
         }
@@ -347,7 +350,7 @@ namespace MCPForUnityTests.Editor.Tools
         [Test]
         public void Execute_CodedomBackend_CompilesAndRuns()
         {
-            var result = ToJObject(ExecuteCode.HandleCommand(new JObject
+            var result = ToJObject(ExecuteCode.HandleCommandSync(new JObject
             {
                 ["action"] = "execute",
                 ["code"] = "return 1 + 1;",
@@ -362,7 +365,7 @@ namespace MCPForUnityTests.Editor.Tools
         [Test]
         public void Execute_CodedomBackend_ResolvesUnityTypes()
         {
-            var result = ToJObject(ExecuteCode.HandleCommand(new JObject
+            var result = ToJObject(ExecuteCode.HandleCommandSync(new JObject
             {
                 ["action"] = "execute",
                 ["code"] = "return UnityEngine.Application.unityVersion;",
@@ -539,7 +542,7 @@ namespace MCPForUnityTests.Editor.Tools
 
         private static JObject Execute(string code)
         {
-            return ToJObject(ExecuteCode.HandleCommand(new JObject
+            return ToJObject(ExecuteCode.HandleCommandSync(new JObject
             {
                 ["action"] = "execute",
                 ["code"] = code
@@ -583,5 +586,125 @@ namespace MCPForUnityTests.Editor.Tools
             Assert.AreEqual(2, b["data"]["result"].Value<int>());
         }
 
+        // ──────────────────── Off-main-thread compile ────────────────────
+
+        [Test]
+        public void HandleCommand_ColdCompile_CompilesOffThreadAndInvokesOnCaller()
+        {
+            // A queueing context stands in for Unity's: the continuation after the pooled
+            // compile is posted here and pumped on this (the test's main) thread.
+            var previous = SynchronizationContext.Current;
+            var ctx = new QueueingSynchronizationContext();
+            SynchronizationContext.SetSynchronizationContext(ctx);
+            try
+            {
+                int callerThread = Thread.CurrentThread.ManagedThreadId;
+                // Unique source so the compiled-snippet cache cannot short-circuit the compile.
+                string code = $"// {Guid.NewGuid():N}\nreturn System.Threading.Thread.CurrentThread.ManagedThreadId;";
+
+                Task<object> task = ExecuteCode.HandleCommand(new JObject
+                {
+                    ["action"] = "execute",
+                    ["code"] = code
+                });
+
+                var deadline = DateTime.UtcNow.AddMinutes(5);
+                while (!task.IsCompleted && DateTime.UtcNow < deadline)
+                {
+                    ctx.RunPending();
+                    Thread.Sleep(5);
+                }
+                Assert.IsTrue(task.IsCompleted, "execute_code did not complete");
+
+                var result = ToJObject(task.Result);
+                Assert.IsTrue(result.Value<bool>("success"), result.ToString());
+                Assert.AreNotEqual(callerThread, ExecuteCode.LastCompileThreadId,
+                    "The compile ran on the calling (main) thread.");
+                Assert.AreEqual(callerThread, result["data"]["result"].Value<int>(),
+                    "The snippet must be invoked back on the calling (main) thread.");
+            }
+            finally
+            {
+                SynchronizationContext.SetSynchronizationContext(previous);
+            }
+        }
+
+        [Test]
+        public void HandleCommand_NoSynchronizationContext_StaysOnCallingThread()
+        {
+            var previous = SynchronizationContext.Current;
+            SynchronizationContext.SetSynchronizationContext(null);
+            try
+            {
+                string code = $"// {Guid.NewGuid():N}\nreturn 7;";
+                Task<object> task = ExecuteCode.HandleCommand(new JObject
+                {
+                    ["action"] = "execute",
+                    ["code"] = code
+                });
+
+                Assert.IsTrue(task.IsCompleted, "Without a context to resume on, the compile must not be deferred.");
+                var result = ToJObject(task.Result);
+                Assert.IsTrue(result.Value<bool>("success"), result.ToString());
+                Assert.AreEqual(Thread.CurrentThread.ManagedThreadId, ExecuteCode.LastCompileThreadId);
+            }
+            finally
+            {
+                SynchronizationContext.SetSynchronizationContext(previous);
+            }
+        }
+
+        // ──────────────────── Roslyn metadata-reference cache ────────────────────
+
+        [Test]
+        public void Roslyn_DistinctSnippets_ReuseMetadataReferences()
+        {
+            if (!RoslynCompiler.IsAvailable)
+                Assert.Ignore("Roslyn (Microsoft.CodeAnalysis) is not installed in this project.");
+
+            var first = ExecuteRoslyn($"// {Guid.NewGuid():N}\nreturn 1;");
+            Assert.IsTrue(first.Value<bool>("success"), first.ToString());
+            int buildsAfterFirst = RoslynCompiler.ReferenceBuildCount;
+
+            var second = ExecuteRoslyn($"// {Guid.NewGuid():N}\nreturn 2;");
+            Assert.IsTrue(second.Value<bool>("success"), second.ToString());
+            Assert.AreEqual(buildsAfterFirst, RoslynCompiler.ReferenceBuildCount,
+                "A second, different snippet rebuilt every MetadataReference.");
+        }
+
+        private static JObject ExecuteRoslyn(string code)
+        {
+            return ToJObject(ExecuteCode.HandleCommandSync(new JObject
+            {
+                ["action"] = "execute",
+                ["code"] = code,
+                ["compiler"] = "roslyn"
+            }));
+        }
+
+        private sealed class QueueingSynchronizationContext : SynchronizationContext
+        {
+            private readonly Queue<KeyValuePair<SendOrPostCallback, object>> _queue =
+                new Queue<KeyValuePair<SendOrPostCallback, object>>();
+
+            public override void Post(SendOrPostCallback d, object state)
+            {
+                lock (_queue) _queue.Enqueue(new KeyValuePair<SendOrPostCallback, object>(d, state));
+            }
+
+            public void RunPending()
+            {
+                while (true)
+                {
+                    KeyValuePair<SendOrPostCallback, object> item;
+                    lock (_queue)
+                    {
+                        if (_queue.Count == 0) return;
+                        item = _queue.Dequeue();
+                    }
+                    item.Key(item.Value);
+                }
+            }
+        }
     }
 }

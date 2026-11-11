@@ -5,6 +5,8 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using MCPForUnity.Editor.Helpers;
 using MCPForUnity.Runtime.Helpers;
 using Microsoft.CSharp;
@@ -77,35 +79,51 @@ namespace MCPForUnity.Editor.Tools
             "for (;;)",
         };
 
-        public static object HandleCommand(JObject @params)
+        /// <summary>
+        /// Async entry point: a cache-missing compile runs on the thread pool so a cold Roslyn
+        /// compile (hundreds of metadata references) no longer freezes the editor; loading the
+        /// result into the cache and invoking it resume on the main thread. Without a
+        /// SynchronizationContext to resume on, everything stays on the calling thread as before.
+        /// </summary>
+        public static Task<object> HandleCommand(JObject @params)
+            => HandleCommandCore(@params, offloadCompile: SynchronizationContext.Current != null);
+
+        /// <summary>
+        /// Same pipeline with the compile on the calling thread; the task is already complete
+        /// when it comes back, so this never blocks on a pending continuation.
+        /// </summary>
+        internal static object HandleCommandSync(JObject @params)
+            => HandleCommandCore(@params, offloadCompile: false).GetAwaiter().GetResult();
+
+        private static Task<object> HandleCommandCore(JObject @params, bool offloadCompile)
         {
             if (@params == null)
-                return new ErrorResponse("Parameters cannot be null.");
+                return Task.FromResult<object>(new ErrorResponse("Parameters cannot be null."));
 
             var p = new ToolParams(@params);
             var actionResult = p.GetRequired("action");
             if (!actionResult.IsSuccess)
-                return new ErrorResponse(actionResult.ErrorMessage);
+                return Task.FromResult<object>(new ErrorResponse(actionResult.ErrorMessage));
 
             string action = actionResult.Value.ToLowerInvariant();
 
             switch (action)
             {
                 case ActionExecute:
-                    return HandleExecute(@params);
+                    return HandleExecuteAsync(@params, offloadCompile);
                 case ActionGetHistory:
-                    return HandleGetHistory(@params);
+                    return Task.FromResult(HandleGetHistory(@params));
                 case ActionClearHistory:
-                    return HandleClearHistory();
+                    return Task.FromResult(HandleClearHistory());
                 case ActionReplay:
-                    return HandleReplay(@params);
+                    return HandleReplayAsync(@params, offloadCompile);
                 default:
-                    return new ErrorResponse(
-                        $"Unknown action: '{action}'. Valid actions: {ActionExecute}, {ActionGetHistory}, {ActionClearHistory}, {ActionReplay}");
+                    return Task.FromResult<object>(new ErrorResponse(
+                        $"Unknown action: '{action}'. Valid actions: {ActionExecute}, {ActionGetHistory}, {ActionClearHistory}, {ActionReplay}"));
             }
         }
 
-        private static object HandleExecute(JObject @params)
+        private static async Task<object> HandleExecuteAsync(JObject @params, bool offloadCompile)
         {
             string code = @params["code"]?.ToString();
             if (string.IsNullOrWhiteSpace(code))
@@ -127,7 +145,7 @@ namespace MCPForUnity.Editor.Tools
             try
             {
                 var startTime = DateTime.UtcNow;
-                var result = CompileAndExecute(code, compiler);
+                var result = await CompileAndExecuteAsync(code, compiler, offloadCompile);
                 var elapsed = (DateTime.UtcNow - startTime).TotalMilliseconds;
 
                 AddToHistory(code, result, elapsed, safetyChecks, compiler);
@@ -177,14 +195,14 @@ namespace MCPForUnity.Editor.Tools
             return new SuccessResponse($"Cleared {count} history entries.");
         }
 
-        private static object HandleReplay(JObject @params)
+        private static Task<object> HandleReplayAsync(JObject @params, bool offloadCompile)
         {
             if (_history.Count == 0)
-                return new ErrorResponse("No execution history to replay.");
+                return Task.FromResult<object>(new ErrorResponse("No execution history to replay."));
 
             int? index = @params["index"]?.Value<int>();
             if (index == null || index < 0 || index >= _history.Count)
-                return new ErrorResponse($"Invalid history index. Valid range: 0-{_history.Count - 1}");
+                return Task.FromResult<object>(new ErrorResponse($"Invalid history index. Valid range: 0-{_history.Count - 1}"));
 
             var entry = _history[index.Value];
             var replayParams = JObject.FromObject(new
@@ -194,12 +212,27 @@ namespace MCPForUnity.Editor.Tools
                 safety_checks = entry.safetyChecksEnabled,
                 compiler = entry.compiler ?? "auto",
             });
-            return HandleExecute(replayParams);
+            return HandleExecuteAsync(replayParams, offloadCompile);
         }
 
         // ──────────────────── Compilation ────────────────────
 
-        private static object CompileAndExecute(string code, string compiler)
+        /// <summary>Managed thread id of the most recent compile; lets tests see where it ran.</summary>
+        internal static int LastCompileThreadId { get; private set; }
+
+        private readonly struct CompileOutcome
+        {
+            public CompileOutcome(Assembly assembly, List<string> errors)
+            {
+                Assembly = assembly;
+                Errors = errors;
+            }
+
+            public Assembly Assembly { get; }
+            public List<string> Errors { get; }
+        }
+
+        private static async Task<object> CompileAndExecuteAsync(string code, string compiler, bool offloadCompile)
         {
             string wrappedSource = WrapUserCode(code);
 
@@ -207,54 +240,54 @@ namespace MCPForUnity.Editor.Tools
             if (_compiledCache.TryGetValue(cacheKey, out CompiledSnippet cached))
                 return InvokeCompiled(cached.Assembly, cached.Compiler);
 
+            // Everything that reads loaded-assembly or static cache state happens here, on the
+            // calling (main) thread; only the compile itself may move to the thread pool.
             string[] assemblyPaths = GetAssemblyPaths();
+            bool roslynAvailable = RoslynCompiler.IsAvailable;
 
-            Assembly compiled;
             string usedCompiler;
-
             switch (compiler)
             {
                 case "roslyn":
-                    if (!RoslynCompiler.IsAvailable)
+                    if (!roslynAvailable)
                         return new ErrorResponse("Roslyn (Microsoft.CodeAnalysis) is not available. Install it via NuGet or use compiler='codedom'.");
-                    compiled = RoslynCompiler.Compile(wrappedSource, assemblyPaths, out var roslynErrors);
-                    if (compiled == null)
-                        return new ErrorResponse("Compilation failed", new { errors = OffsetErrors(roslynErrors), compiler = "roslyn" });
                     usedCompiler = "roslyn";
                     break;
-
                 case "codedom":
-                    compiled = CodeDomCompile(wrappedSource, assemblyPaths, out var codedomErrors);
-                    if (compiled == null)
-                        return new ErrorResponse("Compilation failed", new { errors = OffsetErrors(codedomErrors), compiler = "codedom" });
                     usedCompiler = "codedom";
                     break;
-
                 default: // "auto"
-                    if (RoslynCompiler.IsAvailable)
-                    {
-                        compiled = RoslynCompiler.Compile(wrappedSource, assemblyPaths, out var autoErrors);
-                        if (compiled == null)
-                            return new ErrorResponse("Compilation failed", new { errors = OffsetErrors(autoErrors), compiler = "roslyn" });
-                        usedCompiler = "roslyn";
-                    }
-                    else
-                    {
-                        compiled = CodeDomCompile(wrappedSource, assemblyPaths, out var autoFallbackErrors);
-                        if (compiled == null)
-                            return new ErrorResponse("Compilation failed", new { errors = OffsetErrors(autoFallbackErrors), compiler = "codedom" });
-                        usedCompiler = "codedom";
-                    }
+                    usedCompiler = roslynAvailable ? "roslyn" : "codedom";
                     break;
             }
+
+            string[] codeDomPaths = usedCompiler == "codedom" ? FilterAssemblyPathsForCodeDom(assemblyPaths) : null;
+
+            CompileOutcome outcome = offloadCompile
+                ? await Task.Run(() => CompileBlocking(wrappedSource, usedCompiler, assemblyPaths, codeDomPaths))
+                : CompileBlocking(wrappedSource, usedCompiler, assemblyPaths, codeDomPaths);
+
+            if (outcome.Assembly == null)
+                return new ErrorResponse("Compilation failed", new { errors = OffsetErrors(outcome.Errors), compiler = usedCompiler });
 
             // Bound the cache so a stream of genuinely distinct snippets cannot itself become
             // the leak. Clearing wholesale is enough: the entries are only a compile shortcut.
             if (_compiledCache.Count >= MaxCompiledCacheEntries)
                 _compiledCache.Clear();
-            _compiledCache[cacheKey] = new CompiledSnippet(compiled, usedCompiler);
+            _compiledCache[cacheKey] = new CompiledSnippet(outcome.Assembly, usedCompiler);
 
-            return InvokeCompiled(compiled, usedCompiler);
+            return InvokeCompiled(outcome.Assembly, usedCompiler);
+        }
+
+        /// <summary>Compiles and loads the snippet; touches no Unity API, so it may run on any thread.</summary>
+        private static CompileOutcome CompileBlocking(string wrappedSource, string usedCompiler, string[] assemblyPaths, string[] codeDomPaths)
+        {
+            LastCompileThreadId = Thread.CurrentThread.ManagedThreadId;
+            List<string> errors;
+            Assembly compiled = usedCompiler == "roslyn"
+                ? RoslynCompiler.Compile(wrappedSource, assemblyPaths, out errors)
+                : CodeDomCompile(wrappedSource, codeDomPaths, out errors);
+            return new CompileOutcome(compiled, errors);
         }
 
         private static object InvokeCompiled(Assembly assembly, string compilerUsed)
@@ -302,12 +335,11 @@ namespace MCPForUnity.Editor.Tools
 
         // ──────────────────── CodeDom compiler ────────────────────
 
-        private static Assembly CodeDomCompile(string source, string[] assemblyPaths, out List<string> errors)
+        // filtered: the netstandard-aware paths from FilterAssemblyPathsForCodeDom, resolved by
+        // the caller on the main thread (that filter fills a static cache).
+        private static Assembly CodeDomCompile(string source, string[] filtered, out List<string> errors)
         {
             errors = new List<string>();
-
-            // CodeDom needs the netstandard-aware filtered paths
-            var filtered = FilterAssemblyPathsForCodeDom(assemblyPaths);
 
             // CSharpCodeProvider turns every ReferencedAssemblies entry into a literal /r:"..." flag
             // on the csc command line. Projects with ~100+ asmdefs blow past Windows' 32 KB
@@ -648,6 +680,15 @@ namespace MCPForUnity.Editor.Tools
         private static object _parseOptions;
         private static object _compilationOptions;
 
+        // MetadataReference.CreateFromFile for every loaded assembly (~hundreds) dominated each
+        // compile; the references are immutable, so build the list once per assembly-path set.
+        private static readonly object _referenceLock = new object();
+        private static string[] _referencePathsKey;
+        private static System.Collections.IList _cachedReferences;
+
+        /// <summary>How often the metadata-reference list was (re)built; lets tests verify reuse.</summary>
+        internal static int ReferenceBuildCount { get; private set; }
+
         public static bool IsAvailable
         {
             get
@@ -661,6 +702,45 @@ namespace MCPForUnity.Editor.Tools
         public static void ResetCache()
         {
             _isAvailable = null;
+            lock (_referenceLock)
+            {
+                _referencePathsKey = null;
+                _cachedReferences = null;
+            }
+        }
+
+        private static System.Collections.IList GetReferences(string[] assemblyPaths)
+        {
+            lock (_referenceLock)
+            {
+                if (_cachedReferences != null && ReferenceEquals(_referencePathsKey, assemblyPaths))
+                    return _cachedReferences;
+
+                var listType = typeof(List<>).MakeGenericType(_metadataReferenceType);
+                var refs = (System.Collections.IList)Activator.CreateInstance(listType);
+                var cfParams = _createFromFile.GetParameters();
+
+                foreach (var path in assemblyPaths)
+                {
+                    try
+                    {
+                        var cfArgs = new object[cfParams.Length];
+                        cfArgs[0] = path; // string path
+                        for (int i = 1; i < cfParams.Length; i++)
+                            cfArgs[i] = cfParams[i].HasDefaultValue ? cfParams[i].DefaultValue : null;
+                        refs.Add(_createFromFile.Invoke(null, cfArgs));
+                    }
+                    catch
+                    {
+                        // Skip assemblies that can't be loaded as metadata
+                    }
+                }
+
+                _referencePathsKey = assemblyPaths;
+                _cachedReferences = refs;
+                ReferenceBuildCount++;
+                return refs;
+            }
         }
 
         private static bool Initialize()
@@ -761,28 +841,8 @@ namespace MCPForUnity.Editor.Tools
                 // Parse source
                 var syntaxTree = _parseText.Invoke(null, new object[] { source, _parseOptions, null, null, default(System.Threading.CancellationToken) });
 
-                // Build metadata references
-                var metadataRefBase = _metadataReferenceType;
-                var listType = typeof(List<>).MakeGenericType(metadataRefBase);
-                var refs = (System.Collections.IList)Activator.CreateInstance(listType);
-
-                foreach (var path in assemblyPaths)
-                {
-                    try
-                    {
-                        var cfParams = _createFromFile.GetParameters();
-                        var cfArgs = new object[cfParams.Length];
-                        cfArgs[0] = path; // string path
-                        for (int i = 1; i < cfParams.Length; i++)
-                            cfArgs[i] = cfParams[i].HasDefaultValue ? cfParams[i].DefaultValue : null;
-                        var metaRef = _createFromFile.Invoke(null, cfArgs);
-                        refs.Add(metaRef);
-                    }
-                    catch
-                    {
-                        // Skip assemblies that can't be loaded as metadata
-                    }
-                }
+                // Metadata references: cached per assembly-path set (see GetReferences)
+                var refs = GetReferences(assemblyPaths);
 
                 // Build syntax tree array
                 var syntaxTreeBase = Type.GetType("Microsoft.CodeAnalysis.SyntaxTree, Microsoft.CodeAnalysis");

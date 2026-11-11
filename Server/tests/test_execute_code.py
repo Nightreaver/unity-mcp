@@ -162,3 +162,39 @@ def test_replay_omits_irrelevant_params(mock_unity):
     assert "code" not in mock_unity["params"]
     assert "limit" not in mock_unity["params"]
     assert "safety_checks" not in mock_unity["params"]
+
+
+# --- error text propagation ---
+
+def test_error_text_used_when_message_key_is_none(monkeypatch):
+    """MCPResponse.model_dump() emits message=None next to error; the error must surface."""
+    async def fake_send(send_fn, unity_instance, tool_name, params):
+        return {"success": False, "message": None, "error": "Unity did not respond", "hint": "retry"}
+
+    monkeypatch.setattr(
+        "services.tools.execute_code.get_unity_instance_from_context",
+        AsyncMock(return_value="unity-instance-1"),
+    )
+    monkeypatch.setattr(
+        "services.tools.execute_code.send_with_unity_instance",
+        fake_send,
+    )
+    result = asyncio.run(execute_code(SimpleNamespace(), action="execute", code="return 1;"))
+    assert result["success"] is False
+    assert result["message"] == "Unity did not respond"
+
+
+def test_message_wins_over_error_when_both_present(monkeypatch):
+    async def fake_send(send_fn, unity_instance, tool_name, params):
+        return {"success": False, "message": "Compilation failed", "error": "other"}
+
+    monkeypatch.setattr(
+        "services.tools.execute_code.get_unity_instance_from_context",
+        AsyncMock(return_value="unity-instance-1"),
+    )
+    monkeypatch.setattr(
+        "services.tools.execute_code.send_with_unity_instance",
+        fake_send,
+    )
+    result = asyncio.run(execute_code(SimpleNamespace(), action="execute", code="return 1;"))
+    assert result["message"] == "Compilation failed"

@@ -361,7 +361,11 @@ class PluginHub(WebSocketEndpoint):
                         error=f"Unity did not respond to '{command_type}' within {server_wait_s:.1f}s; please retry",
                         hint="retry",
                     ).model_dump()
-                raise
+                # A bare asyncio.TimeoutError has an empty str(), which surfaced to clients as
+                # an error/message with no text. Keep the type, add what timed out.
+                raise asyncio.TimeoutError(
+                    f"Unity did not respond to '{command_type}' within {server_wait_s:.1f}s"
+                ) from None
         finally:
             async with lock:
                 cls._pending.pop(command_id, None)
