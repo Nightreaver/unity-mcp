@@ -41,7 +41,7 @@ CAMERA CONTROL:
 - list_cameras: List all cameras with status
 
 CAPTURE:
-- screenshot: Capture a screenshot. By default (no camera specified) uses ScreenCapture API, which captures all render layers including Screen Space - Overlay UI canvases. Specifying a camera uses direct camera rendering, which EXCLUDES Screen Space - Overlay canvases (use only when you need a specific viewpoint without UI). Supports include_image=true for inline base64 PNG, batch='surround' for 6-angle contact sheet, batch='orbit' for configurable grid, view_target/view_position for positioned capture, and capture_source='scene_view' to capture the active Unity Scene View viewport.
+- screenshot: Capture a screenshot. By default (no camera specified) uses ScreenCapture API, which captures all render layers including Screen Space - Overlay UI canvases. Specifying a camera uses direct camera rendering, which EXCLUDES Screen Space - Overlay canvases (use only when you need a specific viewpoint without UI). Supports include_image=true for inline base64 PNG, batch='surround' for 6-angle contact sheet, batch='orbit' for configurable grid, view_target/view_position for positioned capture, and capture_source='scene_view' to capture the active Unity Scene View viewport. game_view_size selects a Game View resolution/aspect preset (e.g. 'Full HD (1920x1080)', '4K UHD (3840x2160)', '16:9 Aspect') before capturing, matching the Game View toolbar dropdown.
 - screenshot_multiview: Shorthand for screenshot with batch='surround' and include_image=true.
 
 ## Parameters
@@ -67,6 +67,7 @@ CAPTURE:
 | `orbit_distance` | `float \| str \| None` | — | Camera distance from target for batch='orbit' (default auto). |
 | `orbit_fov` | `float \| str \| None` | — | Camera FOV in degrees for batch='orbit' (default 60). |
 | `output_folder` | `str \| None` | — | Optional folder for screenshot output. Project-relative (e.g. 'Screenshots' or 'Assets/Screenshots') or absolute path inside the project. Overrides the user's Editor preference. If omitted, falls back to the Editor preference, then to the built-in default (Screenshots). |
+| `game_view_size` | `str \| None` | — | Game View resolution/aspect preset to use for the capture, matching the Game View toolbar dropdown. Accepts the exact label ('Full HD (1920x1080)', '4K UHD (3840x2160)', '16:9 Aspect'), a 'WIDTHxHEIGHT' resolution ('1920x1080'), or a substring ('Full HD', '16:9'). game_view only; the Game View is left at the selected size after capture (like choosing it in the dropdown). |
 
 ## Returns
 
