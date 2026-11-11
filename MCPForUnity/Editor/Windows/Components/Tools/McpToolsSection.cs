@@ -598,7 +598,7 @@ namespace MCPForUnity.Editor.Windows.Components.Tools
             };
             gameViewButton.AddToClassList("tool-action-button");
             gameViewButton.style.marginTop = 4;
-            gameViewButton.tooltip = "Capture a game camera screenshot. Default: Assets/Screenshots (configurable in Advanced).";
+            gameViewButton.tooltip = "Capture a game camera screenshot. Default: Screenshots (configurable in Advanced).";
 
             var sceneViewButton = new Button(OnSceneViewScreenshotClicked)
             {
@@ -607,7 +607,7 @@ namespace MCPForUnity.Editor.Windows.Components.Tools
             sceneViewButton.AddToClassList("tool-action-button");
             sceneViewButton.style.marginTop = 4;
             sceneViewButton.style.marginLeft = 4;
-            sceneViewButton.tooltip = "Capture the active Scene View viewport. Default: Assets/Screenshots (configurable in Advanced).";
+            sceneViewButton.tooltip = "Capture the active Scene View viewport. Default: Screenshots (configurable in Advanced).";
 
             var multiviewButton = new Button(OnManageSceneMultiviewClicked)
             {
@@ -616,7 +616,7 @@ namespace MCPForUnity.Editor.Windows.Components.Tools
             multiviewButton.AddToClassList("tool-action-button");
             multiviewButton.style.marginTop = 4;
             multiviewButton.style.marginLeft = 4;
-            multiviewButton.tooltip = "Capture a 6-angle contact sheet around the scene centre. Default: Assets/Screenshots (configurable in Advanced).";
+            multiviewButton.tooltip = "Capture a 6-angle contact sheet around the scene centre. Default: Screenshots (configurable in Advanced).";
 
             var captureLabel = new Label("Capture:");
             captureLabel.style.marginTop = 6;

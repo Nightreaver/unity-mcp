@@ -47,10 +47,12 @@ namespace MCPForUnity.Runtime.Helpers
     {
         /// <summary>
         /// Built-in default folder for screenshots, project-relative.
+        /// Deliberately outside Assets/ — captures are dev artifacts, not game content,
+        /// so they stay out of the AssetDatabase (no import, no .meta files).
         /// Callers can override per-call via the <c>folderOverride</c> parameter on capture methods,
         /// or globally via <c>ScreenshotPreferences</c> in the Editor assembly.
         /// </summary>
-        public const string DefaultFolder = "Assets/Screenshots";
+        public const string DefaultFolder = "Screenshots";
 
         private static Camera FindAvailableCamera()
         {
@@ -663,7 +665,7 @@ namespace MCPForUnity.Runtime.Helpers
             {
                 throw new InvalidOperationException(
                     $"Screenshot folder '{folderOverride}' resolves outside the Unity project root ('{fullFolder}'). " +
-                    $"Use a project-relative path (e.g. 'Assets/Screenshots' or 'Captures').");
+                    $"Use a project-relative path (e.g. 'Screenshots' or 'Assets/Screenshots').");
             }
 
             return fullFolder;

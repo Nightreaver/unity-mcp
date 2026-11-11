@@ -204,7 +204,7 @@ unity-mcp custom_tool list
 | `--orbit-elevations` | string | Vertical angles as JSON array, e.g. `[0,30,-15]` (default `[0, 30, -15]`) |
 | `--orbit-distance` | float | Camera distance from target in world units (auto-fit if omitted) |
 | `--orbit-fov` | float | Camera FOV in degrees (default 60) |
-| `--output-dir, -o` | string | Save directory (default: Unity project's `Assets/Screenshots/`) |
+| `--output-dir, -o` | string | Save directory (default: Unity project's `Screenshots/`) |
 
 ### Testing
 

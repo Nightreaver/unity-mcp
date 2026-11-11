@@ -125,9 +125,9 @@ async def manage_camera(
     orbit_fov: Annotated[float | str | None,
         "Camera FOV in degrees for batch='orbit' (default 60)."] = None,
     output_folder: Annotated[str | None,
-        "Optional folder for screenshot output. Project-relative (e.g. 'Assets/Screenshots' or 'Captures') "
+        "Optional folder for screenshot output. Project-relative (e.g. 'Screenshots' or 'Assets/Screenshots') "
         "or absolute path inside the project. Overrides the user's Editor preference. "
-        "If omitted, falls back to the Editor preference, then to the built-in default (Assets/Screenshots)."] = None,
+        "If omitted, falls back to the Editor preference, then to the built-in default (Screenshots)."] = None,
     game_view_size: Annotated[str | None,
         "Game View resolution/aspect preset to use for the capture, matching the Game View toolbar "
         "dropdown. Accepts the exact label ('Full HD (1920x1080)', '4K UHD (3840x2160)', '16:9 Aspect'), "

@@ -53,7 +53,7 @@ Important: Always use <ui:Style> (with the ui: namespace prefix) in UXML, not ba
 | `include_image` | `bool \| None` | — | Return inline base64 PNG in the response (default false). For render_ui. |
 | `max_resolution` | `int \| None` | — | Max resolution for inline base64 image (default 640). For render_ui. |
 | `screenshot_file_name` | `str \| None` | — | Custom file name for the render output (default: auto-generated). For render_ui. |
-| `output_folder` | `str \| None` | — | Optional folder for the render output. Project-relative (e.g. 'Assets/Screenshots' or 'Captures') or absolute path inside the project. Overrides the user's Editor preference. If omitted, falls back to the Editor preference, then to the built-in default (Assets/Screenshots). For render_ui. |
+| `output_folder` | `str \| None` | — | Optional folder for the render output. Project-relative (e.g. 'Screenshots' or 'Assets/Screenshots') or absolute path inside the project. Overrides the user's Editor preference. If omitted, falls back to the Editor preference, then to the built-in default (Screenshots). For render_ui. |
 | `stylesheet` | `str \| None` | — | Path to USS stylesheet to link (e.g., 'Assets/UI/Styles.uss'). For link_stylesheet. |
 | `filter_type` | `str \| None` | — | Filter UI assets by type: 'uxml', 'uss', 'PanelSettings', or omit for all. For list. |
 | `page_size` | `int \| None` | — | Number of results per page (default 50). For list. |

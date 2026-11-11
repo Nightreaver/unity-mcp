@@ -123,10 +123,10 @@ async def manage_ui(
                                      "Custom file name for the render output (default: auto-generated). "
                                      "For render_ui."] | None = None,
     output_folder: Annotated[str,
-                              "Optional folder for the render output. Project-relative (e.g. 'Assets/Screenshots' or "
-                              "'Captures') or absolute path inside the project. Overrides the user's Editor preference. "
+                              "Optional folder for the render output. Project-relative (e.g. 'Screenshots' or "
+                              "'Assets/Screenshots') or absolute path inside the project. Overrides the user's Editor preference. "
                               "If omitted, falls back to the Editor preference, then to the built-in default "
-                              "(Assets/Screenshots). For render_ui."] | None = None,
+                              "(Screenshots). For render_ui."] | None = None,
 
     # link_stylesheet
     stylesheet: Annotated[str,

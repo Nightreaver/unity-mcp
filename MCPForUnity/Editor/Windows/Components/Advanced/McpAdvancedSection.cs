@@ -141,14 +141,14 @@ namespace MCPForUnity.Editor.Windows.Components.Advanced
             if (screenshotsFolderOverride != null)
             {
                 screenshotsFolderOverride.tooltip = "Default folder for screenshots from manage_camera / manage_ui. " +
-                    "Project-relative (e.g. 'Assets/Screenshots' or 'Captures'). Empty = built-in default (Assets/Screenshots). " +
+                    "Project-relative (e.g. 'Screenshots' or 'Assets/Screenshots'). Empty = built-in default (Screenshots). " +
                     "Per-call 'output_folder' parameters always override this.";
                 screenshotsFolderOverride.SetValueWithoutNotify(ScreenshotPreferences.DefaultFolder);
             }
             if (browseScreenshotsFolderButton != null)
                 browseScreenshotsFolderButton.tooltip = "Pick a folder inside the project; the path is stored project-relative.";
             if (clearScreenshotsFolderButton != null)
-                clearScreenshotsFolderButton.tooltip = "Clear override and use the built-in default (Assets/Screenshots).";
+                clearScreenshotsFolderButton.tooltip = "Clear override and use the built-in default (Screenshots).";
             if (deploySourcePath != null)
                 deploySourcePath.tooltip = "Copy a MCPForUnity folder into this project's package location.";
 
@@ -570,7 +570,7 @@ namespace MCPForUnity.Editor.Windows.Components.Advanced
                 // root rather than silently revert the override the user just chose.
                 EditorUtility.DisplayDialog(
                     "Pick a Subfolder",
-                    "Please pick a subfolder of the project (for example 'Assets/Screenshots' or 'Captures'). " +
+                    "Please pick a subfolder of the project (for example 'Screenshots' or 'Assets/Screenshots'). " +
                     "Selecting the project root would mix screenshots in with your project files.",
                     "OK");
                 return;

@@ -489,8 +489,8 @@ def release_override():
 @click.option("--view-target", default=None,
               help="Target to focus on (name/path/ID or [x,y,z]). Aims camera (game_view) or frames Scene View (scene_view).")
 @click.option("--output-folder", default=None,
-              help="Output folder, project-relative (e.g. 'Assets/Screenshots' or 'Captures') or absolute inside the project. "
-                   "Overrides Editor preference; falls back to Assets/Screenshots when unset.")
+              help="Output folder, project-relative (e.g. 'Screenshots' or 'Assets/Screenshots') or absolute inside the project. "
+                   "Overrides Editor preference; falls back to Screenshots when unset.")
 @handle_unity_errors
 def screenshot(camera_ref, file_name, super_size, include_image, max_resolution, capture_source, batch, view_target, output_folder):
     """Capture a screenshot from a camera.
@@ -532,7 +532,7 @@ def screenshot(camera_ref, file_name, super_size, include_image, max_resolution,
 @click.option("--view-target", default=None, help="Center target for the multiview capture.")
 @click.option("--output-folder", default=None,
               help="Output folder, project-relative or absolute inside the project. "
-                   "Overrides Editor preference; falls back to Assets/Screenshots when unset.")
+                   "Overrides Editor preference; falls back to Screenshots when unset.")
 @handle_unity_errors
 def screenshot_multiview(max_resolution, view_target, output_folder):
     """Capture a 6-angle contact sheet around the scene.

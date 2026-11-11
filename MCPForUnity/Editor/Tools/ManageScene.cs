@@ -33,7 +33,7 @@ namespace MCPForUnity.Editor.Tools
             public string gameViewSize { get; set; }     // optional Game View resolution/aspect preset (game_view only)
             public bool? includeImage { get; set; }
             public int? maxResolution { get; set; }
-            public string outputFolder { get; set; }    // optional override; null falls back to user pref / Assets/Screenshots
+            public string outputFolder { get; set; }    // optional override; null falls back to user pref / Screenshots
             public string batch { get; set; }           // "surround" or "orbit" for multi-angle batch capture
             public JToken viewTarget { get; set; }       // GO reference or [x,y,z] to focus on before capture
             public Vector3? viewPosition { get; set; }  // camera position for view-based capture
@@ -315,7 +315,7 @@ namespace MCPForUnity.Editor.Tools
         }
 
         /// <summary>
-        /// Captures a screenshot to Assets/Screenshots and returns a response payload.
+        /// Captures a screenshot to the resolved screenshot folder and returns a response payload.
         /// Public so the tools UI can reuse the same logic without duplicating parameters.
         /// Available in both Edit Mode and Play Mode.
         /// </summary>
@@ -1154,7 +1154,7 @@ namespace MCPForUnity.Editor.Tools
         /// <summary>
         /// Captures a single screenshot from a temporary camera placed at view_position and aimed at view_target.
         /// Returns inline base64 PNG and also saves the image to the resolved screenshot folder
-        /// (caller's <c>output_folder</c> override -> <c>ScreenshotPreferences.DefaultFolder</c> -> built-in <c>Assets/Screenshots</c>).
+        /// (caller's <c>output_folder</c> override -> <c>ScreenshotPreferences.DefaultFolder</c> -> built-in <c>Screenshots</c>).
         /// </summary>
         private static object CapturePositionedScreenshot(SceneCommand cmd)
         {

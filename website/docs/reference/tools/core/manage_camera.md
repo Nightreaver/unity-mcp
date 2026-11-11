@@ -66,7 +66,7 @@ CAPTURE:
 | `orbit_elevations` | `list[float] \| str \| None` | — | Elevation angles in degrees for batch='orbit' (default [0, 30, -15]). |
 | `orbit_distance` | `float \| str \| None` | — | Camera distance from target for batch='orbit' (default auto). |
 | `orbit_fov` | `float \| str \| None` | — | Camera FOV in degrees for batch='orbit' (default 60). |
-| `output_folder` | `str \| None` | — | Optional folder for screenshot output. Project-relative (e.g. 'Assets/Screenshots' or 'Captures') or absolute path inside the project. Overrides the user's Editor preference. If omitted, falls back to the Editor preference, then to the built-in default (Assets/Screenshots). |
+| `output_folder` | `str \| None` | — | Optional folder for screenshot output. Project-relative (e.g. 'Screenshots' or 'Assets/Screenshots') or absolute path inside the project. Overrides the user's Editor preference. If omitted, falls back to the Editor preference, then to the built-in default (Screenshots). |
 
 ## Returns
 

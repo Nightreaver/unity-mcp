@@ -116,7 +116,7 @@ manage_scene(
     include_transform=False      # bool - include local transforms
 )
 
-# Screenshot (file only — saves to Assets/Screenshots/)
+# Screenshot (file only — saves to Screenshots/)
 manage_camera(action="screenshot")
 
 # Screenshot with inline image (base64 PNG returned to AI)

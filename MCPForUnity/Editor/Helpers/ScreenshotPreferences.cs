@@ -16,7 +16,7 @@ namespace MCPForUnity.Editor.Helpers
 
         /// <summary>
         /// User-configured default folder, or empty string when unset.
-        /// Stored as a project-relative path (e.g. "Assets/Screenshots", "Captures").
+        /// Stored as a project-relative path (e.g. "Screenshots", "Assets/Screenshots").
         /// </summary>
         public static string DefaultFolder
         {

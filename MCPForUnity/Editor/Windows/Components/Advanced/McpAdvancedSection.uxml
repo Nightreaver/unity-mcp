@@ -70,7 +70,7 @@
                 <ui:Label text="Screenshots Folder:" class="override-label" />
             </ui:VisualElement>
             <ui:VisualElement class="path-override-controls">
-                <ui:TextField name="screenshots-folder-override" placeholder-text="Assets/Screenshots (default)" class="override-field" />
+                <ui:TextField name="screenshots-folder-override" placeholder-text="Screenshots (default)" class="override-field" />
                 <ui:Button name="browse-screenshots-folder-button" text="Select" class="icon-button" />
                 <ui:Button name="clear-screenshots-folder-button" text="Clear" class="icon-button" />
             </ui:VisualElement>
